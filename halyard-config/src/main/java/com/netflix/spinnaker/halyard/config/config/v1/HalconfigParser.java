@@ -20,10 +20,12 @@ import com.netflix.spinnaker.halyard.config.error.v1.ParseConfigException;
 import com.netflix.spinnaker.halyard.config.model.v1.node.Halconfig;
 import com.netflix.spinnaker.halyard.config.model.v1.node.Node;
 import com.netflix.spinnaker.halyard.config.problem.v1.ConfigProblemBuilder;
-import com.netflix.spinnaker.halyard.core.AtomicFileWriter;
 import com.netflix.spinnaker.halyard.core.GlobalApplicationOptions;
 import com.netflix.spinnaker.halyard.core.error.v1.HalException;
 import com.netflix.spinnaker.halyard.core.problem.v1.Problem.Severity;
+import com.netflix.spinnaker.halyard.core.storage.v1.GoogleCloudStorageBackend;
+import com.netflix.spinnaker.halyard.core.storage.v1.LocalStorageBackend;
+import com.netflix.spinnaker.halyard.core.storage.v1.StorageBackend;
 import com.netflix.spinnaker.halyard.core.tasks.v1.DaemonTaskHandler;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.FileUtils;
@@ -81,6 +83,7 @@ public class HalconfigParser {
 
   private boolean useBackup = false;
   private String backupHalconfigPath;
+  private StorageBackend storageBackend = new LocalStorageBackend();
 
   /**
    * Parse Halyard's config.
@@ -114,9 +117,9 @@ public class HalconfigParser {
     return halconfig;
   }
 
-  private InputStream getHalconfigStream() throws FileNotFoundException {
+  private InputStream getHalconfigStream() throws IOException {
     String path = useBackup ? backupHalconfigPath : halconfigPath;
-    return new FileInputStream(new File(path));
+    return storageBackend.getObjectStream(path);
   }
 
   /**
@@ -132,7 +135,7 @@ public class HalconfigParser {
       try {
         InputStream is = getHalconfigStream();
         local = parseHalconfig(is);
-      } catch (FileNotFoundException ignored) {
+      } catch (IOException ignored) {
         // leave res as `null`
       } catch (ParserException e) {
         throw new ParseConfigException(e);
@@ -242,19 +245,13 @@ public class HalconfigParser {
       );
     }
 
-    AtomicFileWriter writer = null;
     try {
-      writer = new AtomicFileWriter(path);
-      writer.write(yamlParser.dump(objectMapper.convertValue(local, Map.class)));
-      writer.commit();
+      storageBackend.writeTextObject(path, yamlParser.dump(objectMapper.convertValue(local, Map.class)));
     } catch (IOException e) {
       throw new HalException(Severity.FATAL,
           "Failure writing your halconfig to path \"" + halconfigPath + "\": " + e.getMessage(), e);
     } finally {
       DaemonTaskHandler.setContext(null);
-      if (writer != null) {
-        writer.close();
-      }
     }
   }
 }

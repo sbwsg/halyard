@@ -55,6 +55,10 @@ public class AtomicFileWriter {
     writer.write(contents);
   }
 
+  public void write(char[] contents) throws IOException {
+    writer.write(contents);
+  }
+
   public void commit() throws IOException {
     writer.close();
     writer = null;
